@@ -45,17 +45,17 @@
 <section id="settings">
 <h2>Настройки</h2>
 <form id="settings-form">
-<label>SiteName <input type="text" id="site-name" name="siteName"></label>
+<label>SiteName <input type="text" id="site-name" name="siteName" maxlength="24"></label>
 <details open>
 <summary>Wi-Fi</summary>
-<label>SSID <input type="text" id="wifi-ssid" name="wifiSsid"></label>
+<label>SSID <input type="text" id="wifi-ssid" name="wifiSsid" maxlength="32"></label>
 <label>Пароль <input type="password" id="wifi-pass" name="wifiPass"></label>
 </details>
 <details>
 <summary>MQTT</summary>
 <label>Host <input type="text" id="mqtt-host" name="mqttHost"></label>
 <label>Port <input type="number" id="mqtt-port" name="mqttPort" value="1883"></label>
-<label>User <input type="text" id="mqtt-user" name="mqttUser"></label>
+<label>User <input type="text" id="mqtt-user" name="mqttUser" maxlength="32"></label>
 <label>Pass <input type="password" id="mqtt-pass" name="mqttPass"></label>
 <label>QoS <select id="mqtt-qos" name="mqttQos"><option value="0">0</option><option value="1">1</option><option value="2">2</option></select></label>
 </details>
@@ -93,7 +93,7 @@
 </details>
 <details>
 <summary>Учётная запись UI</summary>
-<label>User <input type="text" id="ui-user" name="uiUser"></label>
+<label>User <input type="text" id="ui-user" name="uiUser" maxlength="32"></label>
 </details>
 <button type="submit">Сохранить</button>
 </form>
