@@ -116,13 +116,17 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 void connectMQTT() {
     mqtt.setServer(settings.mqttHost, settings.mqttPort);
     mqtt.setCallback(mqttCallback);
+    char willTopic[64];
+    snprintf(willTopic, sizeof(willTopic), "site/%s/status", settings.siteName);
     String clientId = String("client-") + String((uint32_t)ESP.getEfuseMac(), HEX);
-    if(!mqtt.connect(clientId.c_str(), settings.mqttUser, settings.mqttPass)) {
+    if(!mqtt.connect(clientId.c_str(), settings.mqttUser, settings.mqttPass,
+                     willTopic, settings.mqttQos, true, "offline")) {
         ledSetState(LedState::ERROR);
         debugPublish("MQTT connect fail");
     } else {
         ledSetState(LedState::NORMAL);
         debugPublish("MQTT connected");
+        mqtt.publish(willTopic, "online", settings.mqttQos, true);
     }
 }
 
