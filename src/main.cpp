@@ -378,6 +378,7 @@ void setupWeb() {
             bool ok = !Update.hasError();
             AsyncWebServerResponse *resp = request->beginResponse(200, "text/plain", ok ? "OK" : "FAIL");
             resp->addHeader("Connection", "close");
+            resp->addHeader("X-Site-Name", settings.siteName);
             request->send(resp);
             if(ok) ESP.restart();
         },
@@ -388,6 +389,7 @@ void setupWeb() {
                 if(!request->authenticate(settings.uiUser, settings.uiPass)) return;
                 if(!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
                 progress = request->beginResponseStream("text/plain");
+                progress->addHeader("X-Site-Name", settings.siteName);
                 last = 0;
             }
             if(!Update.hasError()){
@@ -403,6 +405,7 @@ void setupWeb() {
                 else Update.printError(Serial);
                 if(progress){
                     progress->addHeader("Connection", "close");
+                    progress->addHeader("X-Site-Name", settings.siteName);
                     request->send(progress);
                     progress = nullptr;
                 }
