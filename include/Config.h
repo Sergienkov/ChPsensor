@@ -30,7 +30,9 @@ struct Settings {
     char mqttPass[65] = "";
     uint8_t mqttQos = 0;                // Default QoS for publishes
     char uiUser[17] = "admin";          // Web UI credentials (username)
-    char uiPass[65] = "admin";          // Web UI password (SHA256 hash)
+    // Default password is "admin" with SHA-256 applied
+    char uiPass[65] = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918";
+                                         // Web UI password (SHA256 hash)
     bool debugEnable = false;           // If true, publish debug messages
     Thresholds thr;                     // Per-sensor alarm limits
     uint16_t clogMin = 400;             // Distance below which chute clogging is detected (mm)
