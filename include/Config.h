@@ -23,7 +23,7 @@ struct Settings {
     char mqttPass[65] = "";
     uint8_t mqttQos = 0;
     char uiUser[17] = "admin";
-    char uiPass[33] = "admin";
+    char uiPass[65] = "admin";
     bool debugEnable = false;
     Thresholds thr;
     uint16_t clogMin = 400;
