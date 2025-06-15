@@ -7,6 +7,8 @@
 #include <Wire.h>
 #include "Config.h"
 #include "mbedtls/sha256.h"
+#include "mbedtls/base64.h"
+#include <vector>
 #include "LedFSM.h"
 #include "NtpSync.h"
 #include "MsgBuffer.h"
@@ -103,6 +105,28 @@ String hashPassword(const char *pwd) {
     for (int i = 0; i < 32; ++i) sprintf(hex + i*2, "%02x", hash[i]);
     hex[64] = 0;
     return String(hex);
+}
+
+bool checkAuth(AsyncWebServerRequest *req) {
+    if(!req->hasHeader("Authorization")) return false;
+    String hdr = req->header("Authorization");
+    if(!hdr.startsWith("Basic ")) return false;
+    String enc = hdr.substring(6);
+    size_t enclen = enc.length();
+    size_t outlen = 0;
+    std::vector<unsigned char> out(enclen * 3 / 4 + 1);
+    if(mbedtls_base64_decode(out.data(), out.size(), &outlen,
+                             (const unsigned char*)enc.c_str(), enclen) != 0)
+        return false;
+    out[outlen] = 0;
+    String decoded = String((char*)out.data());
+    int sep = decoded.indexOf(':');
+    if(sep <= 0) return false;
+    String user = decoded.substring(0, sep);
+    String pass = decoded.substring(sep + 1);
+    if(user != settings.uiUser) return false;
+    String hashed = hashPassword(pass.c_str());
+    return hashed == settings.uiPass;
 }
 
 // Connect to Wi-Fi using credentials from Settings.  When no
@@ -300,7 +324,7 @@ StaticJsonDocument<512> buildSettingsJson() {
 }
 
 void handleSettingsPost(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t, size_t) {
-    if(!request->authenticate(settings.uiUser, settings.uiPass)) { request->requestAuthentication(); return; }
+    if(!checkAuth(request)) { request->requestAuthentication(); return; }
     StaticJsonDocument<512> doc;
     if(deserializeJson(doc, data, len)) {
         request->send(400, "text/plain", "Bad JSON");
@@ -333,7 +357,7 @@ void handleSettingsPost(AsyncWebServerRequest *request, uint8_t *data, size_t le
 }
 
 void handlePasswordPost(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t, size_t) {
-    if(!request->authenticate(settings.uiUser, settings.uiPass)) { request->requestAuthentication(); return; }
+    if(!checkAuth(request)) { request->requestAuthentication(); return; }
     StaticJsonDocument<128> doc;
     if(deserializeJson(doc, data, len)) { request->send(400, "text/plain", "Bad JSON"); return; }
     const char* p = doc["password"];
@@ -434,16 +458,16 @@ void sensorsTask(void*) {
 
 void setupWeb() {
     server.on("/api/settings", HTTP_GET, [](AsyncWebServerRequest *req){
-        if(!req->authenticate(settings.uiUser, settings.uiPass)) return req->requestAuthentication();
+        if(!checkAuth(req)) return req->requestAuthentication();
         StaticJsonDocument<512> doc = buildSettingsJson();
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
     server.on("/api/settings", HTTP_POST, [](AsyncWebServerRequest *request){
-        if(!request->authenticate(settings.uiUser, settings.uiPass)) return request->requestAuthentication();
+        if(!checkAuth(request)) return request->requestAuthentication();
     }, NULL, handleSettingsPost);
     server.on("/api/password", HTTP_POST, [](AsyncWebServerRequest *request){
-        if(!request->authenticate(settings.uiUser, settings.uiPass)) return request->requestAuthentication();
+        if(!checkAuth(request)) return request->requestAuthentication();
     }, NULL, handlePasswordPost);
     server.on("/api/live", HTTP_GET, [](AsyncWebServerRequest *req){
         StaticJsonDocument<256> doc;
@@ -461,7 +485,7 @@ void setupWeb() {
     });
 
     server.on("/api/servo", HTTP_POST, [](AsyncWebServerRequest *request){
-        if(!request->authenticate(settings.uiUser, settings.uiPass))
+        if(!checkAuth(request))
             return request->requestAuthentication();
     }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t, size_t){
         StaticJsonDocument<128> doc;
@@ -476,7 +500,7 @@ void setupWeb() {
     });
     server.on("/update", HTTP_POST,
         [](AsyncWebServerRequest *request){
-            if(!request->authenticate(settings.uiUser, settings.uiPass))
+            if(!checkAuth(request))
                 return request->requestAuthentication();
             bool ok = !Update.hasError();
             AsyncWebServerResponse *resp = request->beginResponse(200, "text/plain", ok ? "OK" : "FAIL");
@@ -489,7 +513,7 @@ void setupWeb() {
             static AsyncResponseStream *progress = nullptr;
             static size_t last = 0;
             if(!index){
-                if(!request->authenticate(settings.uiUser, settings.uiPass)) return;
+                if(!checkAuth(request)) return;
                 if(!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
                 progress = request->beginResponseStream("text/plain");
                 progress->addHeader("X-Site-Name", settings.siteName);
