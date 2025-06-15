@@ -63,6 +63,7 @@ float lastEco2 = 0;
 float lastTvoc = 0;
 float lastTemp = 0;
 float lastRh = 0;
+float lastLidar = 0;
 unsigned long lastHeartbeat = 0;
 
 String hashPassword(const char *pwd) {
@@ -156,6 +157,7 @@ void publishHeartbeat() {
     snprintf(topic, sizeof(topic), "site/%s/heartbeat", settings.siteName);
     StaticJsonDocument<256> doc;
     doc["smoke"] = lastMq2;
+    doc["lidar"] = lastLidar;
     doc["eco2"] = lastEco2;
     doc["tvoc"] = lastTvoc;
     doc["temp"] = lastTemp;
@@ -262,14 +264,18 @@ void handlePasswordPost(AsyncWebServerRequest *request, uint8_t *data, size_t le
 }
 
 float readLidar() {
-    // Placeholder for real SF11c read
-    return 500.0f;
+    // Read distance value from SF11c via UART1
+    while(Serial1.available()) Serial1.read();
+    Serial1.setTimeout(50);
+    String resp = Serial1.readStringUntil('\n');
+    return resp.toFloat();
 }
 
 void sensorsTask(void*) {
     const TickType_t delayStep = pdMS_TO_TICKS(100);
     const uint32_t lidarPeriod = 600000; // 10 minutes
     Wire.begin(8, 3);
+    Serial1.begin(115200, SERIAL_8N1, 9, 10);
     mq2.init();
     mq2.setRegressionMethod(1);
     mq2.setA(574.25); mq2.setB(-2.222);
@@ -277,7 +283,7 @@ void sensorsTask(void*) {
     mq2.calibrate(9.83);
     ens160.begin();
     aht21.begin();
-    uint32_t lastLidar = 0;
+    uint32_t lastLidarTs = 0;
     uint8_t clogCnt = 0;
     uint32_t lastSensors = 0;
     for(;;) {
@@ -286,9 +292,12 @@ void sensorsTask(void*) {
             checkSensors();
             lastSensors = now;
         }
-        if((now - lastLidar >= lidarPeriod) || (lidarDueMs && now >= lidarDueMs)) {
+        if((now - lastLidarTs >= lidarPeriod) || (lidarDueMs && now >= lidarDueMs)) {
             float dist = readLidar();
-            lastLidar = now;
+            lastLidar = dist;
+            lastLidarTs = now;
+            if(dist < settings.thr.lidarMin || dist > settings.thr.lidarMax)
+                publishEvent("lidar", dist);
             lidarDueMs = 0;
             if(dist < settings.clogMin) {
                 if(++clogCnt >= settings.clogHold) {
@@ -318,7 +327,7 @@ void setupWeb() {
     }, NULL, handlePasswordPost);
     server.on("/api/live", HTTP_GET, [](AsyncWebServerRequest *req){
         StaticJsonDocument<256> doc;
-        doc["lidar"] = 0; // lidar not implemented
+        doc["lidar"] = lastLidar;
         doc["smoke"] = lastMq2;
         doc["eco2"] = lastEco2;
         doc["tvoc"] = lastTvoc;
