@@ -1,5 +1,27 @@
 #include "Config.h"
 #include <Preferences.h>
+#include "mbedtls/sha256.h"
+
+static bool isHexHash(const char *p) {
+    if(strlen(p) != 64) return false;
+    for(size_t i = 0; i < 64; i++) {
+        char c = p[i];
+        if(!isxdigit(c)) return false;
+    }
+    return true;
+}
+
+void hashPassword(const char *input, char output[65]) {
+    unsigned char hash[32];
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+    mbedtls_sha256_starts(&ctx, 0);
+    mbedtls_sha256_update(&ctx, (const unsigned char *)input, strlen(input));
+    mbedtls_sha256_finish(&ctx, hash);
+    mbedtls_sha256_free(&ctx);
+    for(int i = 0; i < 32; i++) sprintf(output + i*2, "%02x", hash[i]);
+    output[64] = '\0';
+}
 
 Settings settings;
 Preferences prefs;
@@ -41,6 +63,11 @@ void saveSettings() {
     prefs.putString("mqttPass", settings.mqttPass);
     prefs.putUChar("mqttQos", settings.mqttQos);
     prefs.putString("uiUser", settings.uiUser);
+    char hashed[65];
+    if(!isHexHash(settings.uiPass)) {
+        hashPassword(settings.uiPass, hashed);
+        strlcpy(settings.uiPass, hashed, sizeof(settings.uiPass));
+    }
     prefs.putString("uiPass", settings.uiPass);
     prefs.putBool("debugEnable", settings.debugEnable);
     prefs.putFloat("lidarMin", settings.thr.lidarMin);

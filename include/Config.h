@@ -23,7 +23,8 @@ struct Settings {
     char mqttPass[65] = "";
     uint8_t mqttQos = 0;
     char uiUser[17] = "admin";
-    char uiPass[33] = "admin";
+    // SHA-256 hex string requires 64 characters plus null terminator
+    char uiPass[65] = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918";
     bool debugEnable = false;
     Thresholds thr;
     uint16_t clogMin = 400;
@@ -34,5 +35,6 @@ extern Settings settings;
 
 void loadSettings();
 void saveSettings();
+void hashPassword(const char *input, char output[65]);
 
 #endif // CONFIG_H

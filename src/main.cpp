@@ -8,6 +8,7 @@
 #include "NtpSync.h"
 #include "MsgBuffer.h"
 #include <ArduinoJson.h>
+#include "mbedtls/base64.h"
 
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
@@ -77,7 +78,29 @@ StaticJsonDocument<512> buildSettingsJson() {
     return doc;
 }
 
+bool requireAuth(AsyncWebServerRequest *request) {
+    if(!request->hasHeader("Authorization")) { request->requestAuthentication(); return false; }
+    String header = request->header("Authorization");
+    if(!header.startsWith("Basic ")) { request->requestAuthentication(); return false; }
+    String enc = header.substring(6);
+    char decoded[128]; size_t out = 0;
+    if(mbedtls_base64_decode((unsigned char*)decoded, sizeof(decoded)-1, &out, (const unsigned char*)enc.c_str(), enc.length()) != 0) {
+        request->requestAuthentication(); return false;
+    }
+    decoded[out] = '\0';
+    char *colon = strchr(decoded, ':');
+    if(!colon) { request->requestAuthentication(); return false; }
+    *colon = '\0';
+    const char *user = decoded;
+    const char *pass = colon + 1;
+    if(strcmp(user, settings.uiUser) != 0) { request->requestAuthentication(); return false; }
+    char hash[65]; hashPassword(pass, hash);
+    if(strcmp(hash, settings.uiPass) != 0) { request->requestAuthentication(); return false; }
+    return true;
+}
+
 void handleSettingsPost(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t, size_t) {
+    if(!requireAuth(request)) return;
     StaticJsonDocument<512> doc;
     if(deserializeJson(doc, data, len)) {
         request->send(400, "text/plain", "Bad JSON");
@@ -109,6 +132,7 @@ void handleSettingsPost(AsyncWebServerRequest *request, uint8_t *data, size_t le
 }
 
 void handlePasswordPost(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t, size_t) {
+    if(!requireAuth(request)) return;
     StaticJsonDocument<128> doc;
     if(deserializeJson(doc, data, len)) { request->send(400, "text/plain", "Bad JSON"); return; }
     const char* p = doc["password"];
@@ -121,12 +145,13 @@ void handlePasswordPost(AsyncWebServerRequest *request, uint8_t *data, size_t le
 
 void setupWeb() {
     server.on("/api/settings", HTTP_GET, [](AsyncWebServerRequest *req){
+        if(!requireAuth(req)) return;
         StaticJsonDocument<512> doc = buildSettingsJson();
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
-    server.on("/api/settings", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, handleSettingsPost);
-    server.on("/api/password", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, handlePasswordPost);
+    server.on("/api/settings", HTTP_POST, [](AsyncWebServerRequest *request){ if(!requireAuth(request)) return; }, NULL, handleSettingsPost);
+    server.on("/api/password", HTTP_POST, [](AsyncWebServerRequest *request){ if(!requireAuth(request)) return; }, NULL, handlePasswordPost);
     server.on("/api/live", HTTP_GET, [](AsyncWebServerRequest *req){
         StaticJsonDocument<256> doc;
         doc["lidar"] = 0; doc["smoke"] = 0; doc["eco2"] = 0; doc["tvoc"] = 0;
@@ -134,7 +159,11 @@ void setupWeb() {
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
-    server.on("/update", HTTP_POST, [](AsyncWebServerRequest *req){ req->send(200, "text/plain", "OK"); ESP.restart(); });
+    server.on("/update", HTTP_POST, [](AsyncWebServerRequest *req){
+        if(!requireAuth(req)) return;
+        req->send(200, "text/plain", "OK");
+        ESP.restart();
+    });
     server.begin();
 }
 
