@@ -8,11 +8,45 @@
 #include "NtpSync.h"
 #include "MsgBuffer.h"
 #include <ArduinoJson.h>
+#include <esp_timer.h>
 
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
 AsyncWebServer server(80);
 Servo servoX, servoY;
+AsyncWebSocket ws("/ws");
+int servoXAngle = 90;
+int servoYAngle = 90;
+esp_timer_handle_t lidarTimer;
+
+void readLidar() {
+    // Placeholder for actual lidar measurement
+    Serial.println("readLidar()");
+}
+
+void IRAM_ATTR lidarTimerCb(void*) {
+    readLidar();
+}
+
+void handleWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
+                   AwsEventType type, void *arg, uint8_t *data, size_t len) {
+    if(type != WS_EVT_DATA) return;
+    AwsFrameInfo *info = (AwsFrameInfo*)arg;
+    if(!(info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT)) return;
+    String msg;
+    for(size_t i=0;i<len;i++) msg += (char)data[i];
+    bool changed = false;
+    if(msg == "X+") { servoXAngle = min(180, servoXAngle + 1); changed = true; }
+    else if(msg == "X-") { servoXAngle = max(0, servoXAngle - 1); changed = true; }
+    else if(msg == "Y+") { servoYAngle = min(180, servoYAngle + 1); changed = true; }
+    else if(msg == "Y-") { servoYAngle = max(0, servoYAngle - 1); changed = true; }
+    if(changed) {
+        servoX.write(servoXAngle);
+        servoY.write(servoYAngle);
+        esp_timer_stop(lidarTimer);
+        esp_timer_start_once(lidarTimer, 100000); // 100 ms
+    }
+}
 
 TaskHandle_t ledTaskHandle;
 
@@ -135,6 +169,8 @@ void setupWeb() {
         req->send(200, "application/json", out);
     });
     server.on("/update", HTTP_POST, [](AsyncWebServerRequest *req){ req->send(200, "text/plain", "OK"); ESP.restart(); });
+    ws.onEvent(handleWsEvent);
+    server.addHandler(&ws);
     server.begin();
 }
 
@@ -150,6 +186,10 @@ void setup() {
     setupWeb();
     servoX.attach(4);
     servoY.attach(5);
+    servoX.write(servoXAngle);
+    servoY.write(servoYAngle);
+    esp_timer_create_args_t targs = { .callback = lidarTimerCb, .arg = nullptr, .dispatch_method = ESP_TIMER_TASK, .name = "lidar" };
+    esp_timer_create(&targs, &lidarTimer);
 }
 
 void loop() {
