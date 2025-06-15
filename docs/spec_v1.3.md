@@ -53,7 +53,7 @@
 | **Объект**        | `SiteName`                                                       | Строка ≤ 24            | `UNDEF`                            | Отображается в UI, входит в MQTT-топики.                      |
 | **Wi-Fi**         | `SSID`, `Password`                                               | строки                 | —                                  | STA-режим; при пустом SSID запускается AP `start/starttrats`. |
 | **MQTT**          | `Host`, `Port`, `User`, `Pass`, `QoS`                            | host/uint16/строки/0-2 | `broker.hivemq.com` / 1883 / — / 0 | Подключение к брокеру.                                        |
-| **UI-учётка**     | `User`, `Password`                                               | строки                 | `admin/admin`                      | HTTP Basic.                                                   |
+| **UI-учётка**     | `User`, `Password`            | строки                 | `admin/admin`                      | HTTP Basic, пароль хранится как SHA-256.                     |
 | **Пороги**        | `Lidar.min/max`, `Smoke.min/max`, `ECO2.min/max`, `TVOC.min/max` | float                  | см. §5                             | События «выброс».                                             |
 | **Clog-алгоритм** | `ClogMin` (мм), `ClogHold` (циклы 10 мин)                        | uint16, uint8          | 400 мм, 2                          | Детектор засора.                                              |
 | **Debug**         | `debugEnable`                                                    | bool                   | `false`                            | Публикация `/debug`.                                          |
