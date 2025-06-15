@@ -316,6 +316,7 @@ void setup() {
 
 void loop() {
     mqtt.loop();
+    ntpLoop();
     if(mqtt.connected()) bufferFlush();
 
     unsigned long now = millis();
