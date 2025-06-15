@@ -318,6 +318,9 @@ void sensorsTask(void*) {
             lidarDueMs = 0;
             if(dist < settings.clogMin) {
                 if(++clogCnt >= settings.clogHold) {
+                    if(clogCnt == settings.clogHold) {
+                        publishEvent("clog", dist);
+                    }
                     ledSetState(LedState::ALARM);
                 }
             } else {
