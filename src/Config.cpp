@@ -17,6 +17,16 @@ void loadSettings() {
     prefs.getString("uiUser", settings.uiUser, sizeof(settings.uiUser));
     prefs.getString("uiPass", settings.uiPass, sizeof(settings.uiPass));
     settings.debugEnable = prefs.getBool("debugEnable", settings.debugEnable);
+    settings.thr.lidarMin = prefs.getFloat("lidarMin", settings.thr.lidarMin);
+    settings.thr.lidarMax = prefs.getFloat("lidarMax", settings.thr.lidarMax);
+    settings.thr.smokeMin = prefs.getFloat("smokeMin", settings.thr.smokeMin);
+    settings.thr.smokeMax = prefs.getFloat("smokeMax", settings.thr.smokeMax);
+    settings.thr.eco2Min  = prefs.getFloat("eco2Min", settings.thr.eco2Min);
+    settings.thr.eco2Max  = prefs.getFloat("eco2Max", settings.thr.eco2Max);
+    settings.thr.tvocMin  = prefs.getFloat("tvocMin", settings.thr.tvocMin);
+    settings.thr.tvocMax  = prefs.getFloat("tvocMax", settings.thr.tvocMax);
+    settings.clogMin = prefs.getUShort("clogMin", settings.clogMin);
+    settings.clogHold = prefs.getUChar("clogHold", settings.clogHold);
     prefs.end();
 }
 
@@ -33,5 +43,15 @@ void saveSettings() {
     prefs.putString("uiUser", settings.uiUser);
     prefs.putString("uiPass", settings.uiPass);
     prefs.putBool("debugEnable", settings.debugEnable);
+    prefs.putFloat("lidarMin", settings.thr.lidarMin);
+    prefs.putFloat("lidarMax", settings.thr.lidarMax);
+    prefs.putFloat("smokeMin", settings.thr.smokeMin);
+    prefs.putFloat("smokeMax", settings.thr.smokeMax);
+    prefs.putFloat("eco2Min", settings.thr.eco2Min);
+    prefs.putFloat("eco2Max", settings.thr.eco2Max);
+    prefs.putFloat("tvocMin", settings.thr.tvocMin);
+    prefs.putFloat("tvocMax", settings.thr.tvocMax);
+    prefs.putUShort("clogMin", settings.clogMin);
+    prefs.putUChar("clogHold", settings.clogHold);
     prefs.end();
 }

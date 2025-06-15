@@ -29,6 +29,7 @@
     settingsForm.addEventListener('submit', ev => {
         ev.preventDefault();
         const data = {
+            siteName: document.getElementById('site-name').value,
             wifi: {
                 ssid: document.getElementById('wifi-ssid').value,
                 password: document.getElementById('wifi-pass').value
