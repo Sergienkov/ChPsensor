@@ -25,30 +25,36 @@ AsyncWebSocket ws("/ws");
 Servo servoX, servoY;
 
 TaskHandle_t sensorsTaskHandle;
-static int servoXAngle = 90;
-static int servoYAngle = 90;
+TaskHandle_t servoTaskHandle;
+
+static volatile int servoXAngle = 90;
+static volatile int servoYAngle = 90;
 static volatile uint32_t lidarDueMs = 0;
 
+struct ServoCmd {
+    bool absolute;
+    int x;
+    int y;
+};
+
+static QueueHandle_t servoQueue;
+
 void setServoAngles(int x, int y) {
-    servoXAngle = constrain(x, 0, 180);
-    servoYAngle = constrain(y, 0, 180);
-    servoX.write(servoXAngle);
-    servoY.write(servoYAngle);
-    lidarDueMs = millis() + 100;
-    char buf[32];
-    snprintf(buf, sizeof(buf), "servo %d %d", servoXAngle, servoYAngle);
-    debugPublish(buf);
+    ServoCmd cmd{true, x, y};
+    if(servoQueue) xQueueSend(servoQueue, &cmd, 0);
 }
 
 void wsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
              AwsEventType type, void *arg, uint8_t *data, size_t len) {
     if(type != WS_EVT_DATA) return;
     String msg = String((char*)data).substring(0, len);
-    if(msg == "X+") setServoAngles(servoXAngle + 1, servoYAngle);
-    else if(msg == "X-") setServoAngles(servoXAngle - 1, servoYAngle);
-    else if(msg == "Y+") setServoAngles(servoXAngle, servoYAngle + 1);
-    else if(msg == "Y-") setServoAngles(servoXAngle, servoYAngle - 1);
+    ServoCmd cmd{false,0,0};
+    if(msg == "X+") cmd.x = 1;
+    else if(msg == "X-") cmd.x = -1;
+    else if(msg == "Y+") cmd.y = 1;
+    else if(msg == "Y-") cmd.y = -1;
     else return;
+    if(servoQueue) xQueueSend(servoQueue, &cmd, 0);
 }
 
 TaskHandle_t ledTaskHandle;
@@ -335,6 +341,33 @@ float readLidar() {
     return resp.toFloat();
 }
 
+// Задача управления сервоприводами и запуском измерения лидара
+void servoTask(void*) {
+    servoX.attach(4);
+    servoY.attach(5);
+    servoX.write(servoXAngle);
+    servoY.write(servoYAngle);
+    ServoCmd cmd;
+    for(;;) {
+        if(xQueueReceive(servoQueue, &cmd, portMAX_DELAY)) {
+            if(cmd.absolute) {
+                servoXAngle = constrain(cmd.x, 0, 180);
+                servoYAngle = constrain(cmd.y, 0, 180);
+            } else {
+                servoXAngle = constrain(servoXAngle + cmd.x, 0, 180);
+                servoYAngle = constrain(servoYAngle + cmd.y, 0, 180);
+            }
+            servoX.write(servoXAngle);
+            servoY.write(servoYAngle);
+            char buf[32];
+            snprintf(buf, sizeof(buf), "servo %d %d", servoXAngle, servoYAngle);
+            debugPublish(buf);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            lidarDueMs = millis();
+        }
+    }
+}
+
 void sensorsTask(void*) {
     const TickType_t delayStep = pdMS_TO_TICKS(100);
     const uint32_t lidarPeriod = 600000; // 10 minutes
@@ -478,10 +511,8 @@ void setup() {
     connectMQTT();
     bufferInit();
     setupWeb();
-    servoX.attach(4);
-    servoY.attach(5);
-    servoX.write(servoXAngle);
-    servoY.write(servoYAngle);
+    servoQueue = xQueueCreate(4, sizeof(ServoCmd));
+    xTaskCreatePinnedToCore(servoTask, "servo", 2048, nullptr, 1, &servoTaskHandle, 1);
     xTaskCreatePinnedToCore(sensorsTask, "sensors", 4096, nullptr, 1, &sensorsTaskHandle, 1);
 }
 
