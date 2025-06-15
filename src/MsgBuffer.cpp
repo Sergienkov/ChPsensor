@@ -1,4 +1,5 @@
 #include "MsgBuffer.h"
+#include <PubSubClient.h>
 
 void bufferInit() {
     LittleFS.begin(true);
@@ -11,14 +12,23 @@ void bufferStore(const String& topic, const String& payload) {
     f.close();
 }
 
-void bufferFlush() {
+void bufferFlush(PubSubClient &client) {
     if(!LittleFS.exists("/buf")) return;
-    File f = LittleFS.open("/buf", FILE_READ);
-    // In real implementation, publish to MQTT
-    while(f.available()) {
-        String line = f.readStringUntil('\n');
-        // publish logic here
+    File in = LittleFS.open("/buf", FILE_READ);
+    if(!in) return;
+    String remaining;
+    while(in.available()) {
+        String line = in.readStringUntil('\n');
+        int p = line.indexOf('|');
+        if(p < 0) continue;
+        String topic = line.substring(0, p);
+        String payload = line.substring(p+1);
+        if(!client.publish(topic.c_str(), payload.c_str())) {
+            remaining += line + "\n";
+        }
     }
-    f.close();
-    LittleFS.remove("/buf");
+    in.close();
+    File out = LittleFS.open("/buf", FILE_WRITE);
+    out.print(remaining);
+    out.close();
 }

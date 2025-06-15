@@ -14,7 +14,33 @@ PubSubClient mqtt(espClient);
 AsyncWebServer server(80);
 Servo servoX, servoY;
 
+struct SensorData {
+    float lidar = 0;
+    float smoke = 0;
+    float eco2  = 0;
+    float tvoc  = 0;
+    float temp  = 0;
+    float rh    = 0;
+    int xAngle = 90;
+    int yAngle = 90;
+} sensors;
+
+uint8_t clogCounter = 0;
+
 TaskHandle_t ledTaskHandle;
+TaskHandle_t sensorTaskHandle;
+TaskHandle_t heartbeatTaskHandle;
+AsyncWebSocket ws("/ws");
+
+String mqttBase() {
+    return String("site/") + settings.siteName + "/";
+}
+
+void publishWithBuffer(const String &topic, const String &payload) {
+    if(!mqtt.connected() || !mqtt.publish(topic.c_str(), payload.c_str())) {
+        bufferStore(topic, payload);
+    }
+}
 
 void connectWiFi() {
     if(strlen(settings.wifiSSID) == 0) {
@@ -45,6 +71,57 @@ void connectMQTT() {
         ledSetState(LedState::ERROR);
     } else {
         ledSetState(LedState::NORMAL);
+    }
+}
+
+void sensorsTask(void*) {
+    for(;;) {
+        sensors.lidar = random(0, 1500);
+        sensors.smoke = analogRead(34);
+        sensors.eco2  = random(400, 2000);
+        sensors.tvoc  = random(0, 600);
+        sensors.temp  = random(20, 30);
+        sensors.rh    = random(30, 70);
+
+        if(sensors.lidar < settings.thr.lidarMin || sensors.lidar > settings.thr.lidarMax) {
+            publishWithBuffer(mqttBase() + "event/lidar", String(sensors.lidar));
+        }
+        if(sensors.smoke < settings.thr.smokeMin || sensors.smoke > settings.thr.smokeMax) {
+            publishWithBuffer(mqttBase() + "event/smoke", String(sensors.smoke));
+        }
+        if(sensors.eco2 < settings.thr.eco2Min || sensors.eco2 > settings.thr.eco2Max) {
+            publishWithBuffer(mqttBase() + "event/eco2", String(sensors.eco2));
+        }
+        if(sensors.tvoc < settings.thr.tvocMin || sensors.tvoc > settings.thr.tvocMax) {
+            publishWithBuffer(mqttBase() + "event/tvoc", String(sensors.tvoc));
+        }
+
+        if(sensors.lidar < settings.clogMin) {
+            if(++clogCounter >= settings.clogHold) {
+                publishWithBuffer(mqttBase() + "event/clog", String(sensors.lidar));
+                ledSetState(LedState::ALARM);
+            }
+        } else {
+            clogCounter = 0;
+            ledSetState(LedState::NORMAL);
+        }
+        vTaskDelay(pdMS_TO_TICKS(60000));
+    }
+}
+
+void heartbeatTask(void*) {
+    for(;;) {
+        StaticJsonDocument<256> doc;
+        doc["lidar"] = sensors.lidar;
+        doc["smoke"] = sensors.smoke;
+        doc["eco2"]  = sensors.eco2;
+        doc["tvoc"]  = sensors.tvoc;
+        doc["temp"]  = sensors.temp;
+        doc["rh"]    = sensors.rh;
+        String out;
+        serializeJson(doc, out);
+        publishWithBuffer(mqttBase() + "heartbeat", out);
+        vTaskDelay(pdMS_TO_TICKS(3600000));
     }
 }
 
@@ -120,6 +197,18 @@ void handlePasswordPost(AsyncWebServerRequest *request, uint8_t *data, size_t le
 }
 
 void setupWeb() {
+    ws.onEvent([](AsyncWebSocket *s, AsyncWebSocketClient *c, AwsEventType t, void *, uint8_t *data, size_t len){
+        if(t == WS_EVT_DATA) {
+            String cmd((char*)data, len);
+            if(cmd == "X+") sensors.xAngle++;
+            else if(cmd == "X-") sensors.xAngle--;
+            else if(cmd == "Y+") sensors.yAngle++;
+            else if(cmd == "Y-") sensors.yAngle--;
+            servoX.write(sensors.xAngle);
+            servoY.write(sensors.yAngle);
+        }
+    });
+    server.addHandler(&ws);
     server.on("/api/settings", HTTP_GET, [](AsyncWebServerRequest *req){
         StaticJsonDocument<512> doc = buildSettingsJson();
         String out; serializeJson(doc, out);
@@ -129,8 +218,14 @@ void setupWeb() {
     server.on("/api/password", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, handlePasswordPost);
     server.on("/api/live", HTTP_GET, [](AsyncWebServerRequest *req){
         StaticJsonDocument<256> doc;
-        doc["lidar"] = 0; doc["smoke"] = 0; doc["eco2"] = 0; doc["tvoc"] = 0;
-        doc["temp"] = 0; doc["rh"] = 0; doc["x"] = 0; doc["y"] = 0;
+        doc["lidar"] = sensors.lidar;
+        doc["smoke"] = sensors.smoke;
+        doc["eco2"]  = sensors.eco2;
+        doc["tvoc"]  = sensors.tvoc;
+        doc["temp"]  = sensors.temp;
+        doc["rh"]    = sensors.rh;
+        doc["x"]     = sensors.xAngle;
+        doc["y"]     = sensors.yAngle;
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
@@ -150,10 +245,13 @@ void setup() {
     setupWeb();
     servoX.attach(4);
     servoY.attach(5);
+    xTaskCreate(sensorsTask, "sensors", 2048, nullptr, 1, &sensorTaskHandle);
+    xTaskCreate(heartbeatTask, "heartbeat", 2048, nullptr, 1, &heartbeatTaskHandle);
 }
 
 void loop() {
     mqtt.loop();
-    if(mqtt.connected()) bufferFlush();
+    if(mqtt.connected()) bufferFlush(mqtt);
+    ws.cleanupClients();
     delay(10);
 }

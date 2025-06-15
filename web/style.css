@@ -41,6 +41,14 @@ button {
     margin-top: 0.5rem;
     cursor: pointer;
 }
+
+#servo-controls {
+    margin-top: 0.5rem;
+}
+
+#servo-controls button {
+    margin-right: 0.25rem;
+}
 .modal {
     position: fixed;
     top: 0;
