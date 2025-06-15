@@ -92,4 +92,25 @@
 
     otaButton.addEventListener('click', () => otaModal.classList.add('show'));
     otaCancel.addEventListener('click', () => otaModal.classList.remove('show'));
+
+    // WebSocket for servo control
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+
+    function sendCmd(cmd) {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(cmd);
+        }
+    }
+
+    document.getElementById('btn-x-plus').addEventListener('click', () => sendCmd('X+'));
+    document.getElementById('btn-x-minus').addEventListener('click', () => sendCmd('X-'));
+    document.getElementById('btn-y-plus').addEventListener('click', () => sendCmd('Y+'));
+    document.getElementById('btn-y-minus').addEventListener('click', () => sendCmd('Y-'));
+
+    document.addEventListener('keydown', ev => {
+        if (ev.key === 'ArrowUp') sendCmd('Y+');
+        else if (ev.key === 'ArrowDown') sendCmd('Y-');
+        else if (ev.key === 'ArrowLeft') sendCmd('X-');
+        else if (ev.key === 'ArrowRight') sendCmd('X+');
+    });
 })();

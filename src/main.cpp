@@ -432,6 +432,8 @@ void setupWeb() {
                 }
             }
         });
+    ws.onEvent(wsEvent);
+    server.addHandler(&ws);
     server.begin();
 }
 
