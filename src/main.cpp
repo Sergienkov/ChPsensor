@@ -4,6 +4,7 @@
 #include <ESPAsyncWebServer.h>
 #include <ESP32Servo.h>
 #include <Update.h>
+#include <Wire.h>
 #include "Config.h"
 #include "mbedtls/sha256.h"
 #include "LedFSM.h"
@@ -11,6 +12,9 @@
 #include "MsgBuffer.h"
 #include "Filter.h"
 #include <ArduinoJson.h>
+#include <MQUnifiedsensor.h>
+#include "SparkFun_ENS160.h"
+#include <Adafruit_AHTX0.h>
 
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
@@ -43,9 +47,22 @@ void wsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
 }
 
 TaskHandle_t ledTaskHandle;
-// Filter objects ...
+// Filter objects and sensor instances
+MQUnifiedsensor mq2("ESP32", 3.3, 12, 34, "MQ-2");
+SparkFun_ENS160 ens160;
+Adafruit_AHTX0 aht21;
 
-unsigned long lastF2 = 0;
+SMAFilter<float, 5> mq2Filter;
+SMAFilter<float, 5> eco2Filter;
+SMAFilter<float, 5> tvocFilter;
+SMAFilter<float, 5> tempFilter;
+SMAFilter<float, 5> rhFilter;
+
+float lastMq2 = 0;
+float lastEco2 = 0;
+float lastTvoc = 0;
+float lastTemp = 0;
+float lastRh = 0;
 unsigned long lastHeartbeat = 0;
 
 String hashPassword(const char *pwd) {
@@ -97,13 +114,33 @@ void connectMQTT() {
 // -------- Sensor stubs and publishing helpers --------
 
 float readMQ2() {
-    return analogRead(34);
+    mq2.update();
+    return mq2.readSensor();
 }
 
-float readEco2() { return random(400, 2000); }
-float readTvoc() { return random(0, 600); }
-float readTemp() { return random(200, 300) / 10.0f; }
-float readRh() { return random(300, 700) / 10.0f; }
+float readEco2() {
+    if(ens160.checkDataStatus())
+        return ens160.getECO2();
+    return lastEco2;
+}
+
+float readTvoc() {
+    if(ens160.checkDataStatus())
+        return ens160.getTVOC();
+    return lastTvoc;
+}
+
+float readTemp() {
+    sensors_event_t h, t;
+    aht21.getEvent(&h, &t);
+    return t.temperature;
+}
+
+float readRh() {
+    sensors_event_t h, t;
+    aht21.getEvent(&h, &t);
+    return h.relative_humidity;
+}
 
 void publishEvent(const char* name, float value) {
     char topic[64];
@@ -232,10 +269,23 @@ float readLidar() {
 void sensorsTask(void*) {
     const TickType_t delayStep = pdMS_TO_TICKS(100);
     const uint32_t lidarPeriod = 600000; // 10 minutes
+    Wire.begin(8, 3);
+    mq2.init();
+    mq2.setRegressionMethod(1);
+    mq2.setA(574.25); mq2.setB(-2.222);
+    mq2.setRL(5);
+    mq2.calibrate(9.83);
+    ens160.begin();
+    aht21.begin();
     uint32_t lastLidar = 0;
     uint8_t clogCnt = 0;
+    uint32_t lastSensors = 0;
     for(;;) {
         uint32_t now = millis();
+        if(now - lastSensors >= 60000) {
+            checkSensors();
+            lastSensors = now;
+        }
         if((now - lastLidar >= lidarPeriod) || (lidarDueMs && now >= lidarDueMs)) {
             float dist = readLidar();
             lastLidar = now;
@@ -357,10 +407,6 @@ void loop() {
     if(mqtt.connected()) bufferFlush();
 
     unsigned long now = millis();
-    if(now - lastF2 >= 60000) {
-        checkSensors();
-        lastF2 = now;
-    }
     if(now - lastHeartbeat >= 3600000) {
         publishHeartbeat();
         lastHeartbeat = now;
