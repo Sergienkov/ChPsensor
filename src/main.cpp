@@ -4,6 +4,7 @@
 #include <ESPAsyncWebServer.h>
 #include <ESP32Servo.h>
 #include "Config.h"
+#include "mbedtls/sha256.h"
 #include "LedFSM.h"
 #include "NtpSync.h"
 #include "MsgBuffer.h"
@@ -15,6 +16,20 @@ AsyncWebServer server(80);
 Servo servoX, servoY;
 
 TaskHandle_t ledTaskHandle;
+
+String hashPassword(const char *pwd) {
+    unsigned char hash[32];
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+    mbedtls_sha256_starts_ret(&ctx, 0);
+    mbedtls_sha256_update_ret(&ctx, (const unsigned char*)pwd, strlen(pwd));
+    mbedtls_sha256_finish_ret(&ctx, hash);
+    mbedtls_sha256_free(&ctx);
+    char hex[65];
+    for(int i=0;i<32;i++) sprintf(hex + i*2, "%02x", hash[i]);
+    hex[64] = 0;
+    return String(hex);
+}
 
 void connectWiFi() {
     if(strlen(settings.wifiSSID) == 0) {
@@ -78,6 +93,7 @@ StaticJsonDocument<512> buildSettingsJson() {
 }
 
 void handleSettingsPost(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t, size_t) {
+    if(!request->authenticate(settings.uiUser, settings.uiPass)) { request->requestAuthentication(); return; }
     StaticJsonDocument<512> doc;
     if(deserializeJson(doc, data, len)) {
         request->send(400, "text/plain", "Bad JSON");
@@ -109,11 +125,13 @@ void handleSettingsPost(AsyncWebServerRequest *request, uint8_t *data, size_t le
 }
 
 void handlePasswordPost(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t, size_t) {
+    if(!request->authenticate(settings.uiUser, settings.uiPass)) { request->requestAuthentication(); return; }
     StaticJsonDocument<128> doc;
     if(deserializeJson(doc, data, len)) { request->send(400, "text/plain", "Bad JSON"); return; }
     const char* p = doc["password"];
     if(p) {
-        strlcpy(settings.uiPass, p, sizeof(settings.uiPass));
+        String hashed = hashPassword(p);
+        strlcpy(settings.uiPass, hashed.c_str(), sizeof(settings.uiPass));
         saveSettings();
     }
     request->send(200, "text/plain", "OK");
@@ -121,12 +139,17 @@ void handlePasswordPost(AsyncWebServerRequest *request, uint8_t *data, size_t le
 
 void setupWeb() {
     server.on("/api/settings", HTTP_GET, [](AsyncWebServerRequest *req){
+        if(!req->authenticate(settings.uiUser, settings.uiPass)) return req->requestAuthentication();
         StaticJsonDocument<512> doc = buildSettingsJson();
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
-    server.on("/api/settings", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, handleSettingsPost);
-    server.on("/api/password", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, handlePasswordPost);
+    server.on("/api/settings", HTTP_POST, [](AsyncWebServerRequest *request){
+        if(!request->authenticate(settings.uiUser, settings.uiPass)) return request->requestAuthentication();
+    }, NULL, handleSettingsPost);
+    server.on("/api/password", HTTP_POST, [](AsyncWebServerRequest *request){
+        if(!request->authenticate(settings.uiUser, settings.uiPass)) return request->requestAuthentication();
+    }, NULL, handlePasswordPost);
     server.on("/api/live", HTTP_GET, [](AsyncWebServerRequest *req){
         StaticJsonDocument<256> doc;
         doc["lidar"] = 0; doc["smoke"] = 0; doc["eco2"] = 0; doc["tvoc"] = 0;
@@ -134,7 +157,11 @@ void setupWeb() {
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
-    server.on("/update", HTTP_POST, [](AsyncWebServerRequest *req){ req->send(200, "text/plain", "OK"); ESP.restart(); });
+    server.on("/update", HTTP_POST, [](AsyncWebServerRequest *req){
+        if(!req->authenticate(settings.uiUser, settings.uiPass)) return req->requestAuthentication();
+        req->send(200, "text/plain", "OK");
+        ESP.restart();
+    });
     server.begin();
 }
 
