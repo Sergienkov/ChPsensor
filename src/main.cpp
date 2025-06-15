@@ -203,14 +203,16 @@ void publishHeartbeat() {
 }
 
 // Apply hysteresis to sensor thresholds. When the current alarm state is
-// false, readings must exceed min*0.95 or max*1.05 to trigger the alarm.
-// Once in alarm state, values must return inside min*1.05..max*0.95 to clear.
+// false, readings must exceed the threshold by 5% to trigger the alarm.
+// Once in alarm state, values must return inside the opposite 5% band to clear.
 void checkThreshold(const char *name, float value,
                     float min, float max, bool &state) {
-    float onLow  = min * 0.95f;
-    float onHigh = max * 1.05f;
-    float offLow  = min * 1.05f;
-    float offHigh = max * 0.95f;
+    // Если порог отрицательный, полоса смещается в обратную сторону.
+    // Например, при min < 0 включение: onLow = min * 1.05, выключение: offLow = min * 0.95
+    float onLow  = min * (min < 0 ? 1.05f : 0.95f);
+    float onHigh = max * (max < 0 ? 0.95f : 1.05f);
+    float offLow  = min * (min < 0 ? 0.95f : 1.05f);
+    float offHigh = max * (max < 0 ? 1.05f : 0.95f);
     if(!state) {
         if(value < onLow || value > onHigh) {
             state = true;
