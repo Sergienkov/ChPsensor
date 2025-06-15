@@ -74,6 +74,13 @@ float lastLidar = 0;
 float lastPressure = 0;
 unsigned long lastHeartbeat = 0;
 
+// Current alarm state for each sensor used to implement hysteresis
+static bool lidarAlarm = false;
+static bool smokeAlarm = false;
+static bool eco2Alarm  = false;
+static bool tvocAlarm  = false;
+static bool presAlarm  = false;
+
 String hashPassword(const char *pwd) {
     unsigned char hash[32];
     mbedtls_sha256_context ctx;
@@ -195,6 +202,28 @@ void publishHeartbeat() {
     debugPublish("heartbeat");
 }
 
+// Apply hysteresis to sensor thresholds. When the current alarm state is
+// false, readings must exceed min*0.95 or max*1.05 to trigger the alarm.
+// Once in alarm state, values must return inside min*1.05..max*0.95 to clear.
+void checkThreshold(const char *name, float value,
+                    float min, float max, bool &state) {
+    float onLow  = min * 0.95f;
+    float onHigh = max * 1.05f;
+    float offLow  = min * 1.05f;
+    float offHigh = max * 0.95f;
+    if(!state) {
+        if(value < onLow || value > onHigh) {
+            state = true;
+            publishEvent(name, value);
+        }
+    } else {
+        if(value > offLow && value < offHigh) {
+            state = false;
+            publishEvent(name, value);
+        }
+    }
+}
+
 void checkSensors() {
     mq2Filter.add(readMQ2());
     eco2Filter.add(readEco2());
@@ -210,14 +239,15 @@ void checkSensors() {
     lastRh = rhFilter.average();
     lastPressure = presFilter.average();
 
-    if(lastMq2 < settings.thr.smokeMin || lastMq2 > settings.thr.smokeMax)
-        publishEvent("smoke", lastMq2);
-    if(lastEco2 < settings.thr.eco2Min || lastEco2 > settings.thr.eco2Max)
-        publishEvent("eco2", lastEco2);
-    if(lastTvoc < settings.thr.tvocMin || lastTvoc > settings.thr.tvocMax)
-        publishEvent("tvoc", lastTvoc);
-    if(lastPressure < settings.thr.presMin || lastPressure > settings.thr.presMax)
-        publishEvent("pressure", lastPressure);
+    // Check each sensor with 5% hysteresis before publishing alarm events
+    checkThreshold("smoke", lastMq2,
+                   settings.thr.smokeMin, settings.thr.smokeMax, smokeAlarm);
+    checkThreshold("eco2", lastEco2,
+                   settings.thr.eco2Min, settings.thr.eco2Max, eco2Alarm);
+    checkThreshold("tvoc", lastTvoc,
+                   settings.thr.tvocMin, settings.thr.tvocMax, tvocAlarm);
+    checkThreshold("pressure", lastPressure,
+                   settings.thr.presMin, settings.thr.presMax, presAlarm);
 }
 
 StaticJsonDocument<512> buildSettingsJson() {
@@ -331,8 +361,9 @@ void sensorsTask(void*) {
             float dist = readLidar();
             lastLidar = dist;
             lastLidarTs = now;
-            if(dist < settings.thr.lidarMin || dist > settings.thr.lidarMax)
-                publishEvent("lidar", dist);
+            // Apply hysteresis when checking distance limits
+            checkThreshold("lidar", dist,
+                           settings.thr.lidarMin, settings.thr.lidarMax, lidarAlarm);
             lidarDueMs = 0;
             if(dist < settings.clogMin) {
                 if(++clogCnt >= settings.clogHold) {
