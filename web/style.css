@@ -1,20 +1,56 @@
+:root {
+    --bg-color: #f0f0f0;
+    --text-color: #333;
+    --header-bg: #2d2d2d;
+    --header-color: #fff;
+    --main-bg: #fff;
+    --table-border: #ccc;
+    --table-head-bg: #444;
+    --table-head-color: #fff;
+}
+
 body {
     margin: 0;
     font-family: Arial, sans-serif;
-    background-color: #f0f0f0;
-    color: #333;
+    background-color: var(--bg-color);
+    color: var(--text-color);
 }
+
+body.dark {
+    --bg-color: #121212;
+    --text-color: #e0e0e0;
+    --header-bg: #1f1f1f;
+    --header-color: #fff;
+    --main-bg: #1e1e1e;
+    --table-border: #555;
+    --table-head-bg: #333;
+    --table-head-color: #fff;
+}
+
 header {
-    background-color: #2d2d2d;
-    color: white;
+    background-color: var(--header-bg);
+    color: var(--header-color);
     padding: 1rem;
     text-align: center;
+    position: relative;
 }
+
+#theme-toggle {
+    position: absolute;
+    right: 1rem;
+    top: 1rem;
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: inherit;
+    cursor: pointer;
+}
+
 main {
     max-width: 960px;
     margin: auto;
     padding: 1rem;
-    background: white;
+    background: var(--main-bg);
 }
 h2 {
     margin-top: 1.5rem;
@@ -25,12 +61,12 @@ h2 {
     margin-top: 1rem;
 }
 #live-table th, #live-table td {
-    border: 1px solid #ccc;
+    border: 1px solid var(--table-border);
     padding: 0.5rem;
 }
 #live-table thead {
-    background: #444;
-    color: white;
+    background: var(--table-head-bg);
+    color: var(--table-head-color);
 }
 label {
     display: block;
@@ -53,7 +89,7 @@ button {
     justify-content: center;
 }
 .modal form {
-    background: white;
+    background: var(--main-bg);
     padding: 1rem;
     border-radius: 4px;
 }
@@ -78,4 +114,11 @@ button {
 }
 #servo-controls button {
     margin: 0.25rem;
+}
+
+#last-update {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    color: #666;
+    text-align: center;
 }
