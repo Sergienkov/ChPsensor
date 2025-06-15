@@ -3,6 +3,7 @@
 #include <PubSubClient.h>
 #include <ESPAsyncWebServer.h>
 #include <ESP32Servo.h>
+#include <Update.h>
 #include "Config.h"
 #include "LedFSM.h"
 #include "NtpSync.h"
@@ -134,7 +135,29 @@ void setupWeb() {
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
-    server.on("/update", HTTP_POST, [](AsyncWebServerRequest *req){ req->send(200, "text/plain", "OK"); ESP.restart(); });
+    server.on("/update", HTTP_POST,
+        [](AsyncWebServerRequest *request){
+            if(!request->authenticate(settings.uiUser, settings.uiPass))
+                return request->requestAuthentication();
+            bool ok = !Update.hasError();
+            AsyncWebServerResponse *resp = request->beginResponse(200, "text/plain", ok ? "OK" : "FAIL");
+            resp->addHeader("Connection", "close");
+            request->send(resp);
+            if(ok) ESP.restart();
+        },
+        [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
+            if(!index){
+                if(!request->authenticate(settings.uiUser, settings.uiPass)) return;
+                if(!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
+            }
+            if(!Update.hasError()){
+                if(Update.write(data, len) != len) Update.printError(Serial);
+            }
+            if(final){
+                if(Update.end(true)) Serial.printf("Update Success: %u bytes\n", index + len);
+                else Update.printError(Serial);
+            }
+        });
     server.begin();
 }
 
