@@ -305,16 +305,30 @@ void setupWeb() {
             if(ok) ESP.restart();
         },
         [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
+            static AsyncResponseStream *progress = nullptr;
+            static size_t last = 0;
             if(!index){
                 if(!request->authenticate(settings.uiUser, settings.uiPass)) return;
                 if(!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
+                progress = request->beginResponseStream("text/plain");
+                last = 0;
             }
             if(!Update.hasError()){
                 if(Update.write(data, len) != len) Update.printError(Serial);
             }
+            size_t p = (index + len) * 100 / request->contentLength();
+            if(progress && (p - last >= 5 || final)){
+                progress->printf("%u\n", p);
+                last = p;
+            }
             if(final){
                 if(Update.end(true)) Serial.printf("Update Success: %u bytes\n", index + len);
                 else Update.printError(Serial);
+                if(progress){
+                    progress->addHeader("Connection", "close");
+                    request->send(progress);
+                    progress = nullptr;
+                }
             }
         });
     server.begin();
