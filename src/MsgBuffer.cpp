@@ -1,7 +1,6 @@
 #include "MsgBuffer.h"
 #include "Config.h"
 #include <PubSubClient.h>
-#include <vector>
 
 extern PubSubClient mqtt;
 
@@ -19,36 +18,43 @@ void bufferStore(const String& topic, const String& payload) {
 void bufferFlush() {
     if(!LittleFS.exists("/buf")) return;
 
-    // Считываем файл и собираем все строки в память
-    File f = LittleFS.open("/buf", FILE_READ);
-    std::vector<String> lines;
-    while(f.available()) {
-        lines.push_back(f.readStringUntil('\n'));
-    }
-    f.close();
+    File rf = LittleFS.open("/buf", FILE_READ);
+    if(!rf) return;
 
-    // Публикуем строки по очереди, останавливаемся при ошибке
-    size_t i = 0;
-    for(; i < lines.size(); ++i) {
-        String line = lines[i];
+    File wf;               // Создается только при ошибке отправки
+    bool failure = false;
+
+    while(rf.available()) {
+        String line = rf.readStringUntil('\n');
         int sep = line.indexOf('|');
         if(sep <= 0) continue;
-        String topic = line.substring(0, sep);
+        String topic   = line.substring(0, sep);
         String payload = line.substring(sep + 1);
-        if(!mqtt.publish(topic.c_str(), payload.c_str(), settings.mqttQos, false)) {
-            break;
+
+        if(!failure && mqtt.publish(topic.c_str(), payload.c_str(), settings.mqttQos, false)) {
+            continue;           // успешно отправлено, переходим к следующей строке
         }
+
+        if(!failure) {
+            // первая ошибка, открываем временный файл и записываем текущую строку
+            failure = true;
+            wf = LittleFS.open("/buf.tmp", FILE_WRITE);
+            if(!wf) {
+                // если не удалось открыть файл, выходим без изменений
+                rf.close();
+                return;
+            }
+        }
+        wf.println(line);       // сохраняем текущую или последующие строки
     }
 
-    // Если все сообщения отправлены, удаляем файл
-    if(i == lines.size()) {
+    rf.close();
+
+    if(!failure) {
         LittleFS.remove("/buf");
     } else {
-        // Иначе переписываем обратно оставшиеся строки
-        File wf = LittleFS.open("/buf", FILE_WRITE);
-        for(; i < lines.size(); ++i) {
-            wf.println(lines[i]);
-        }
         wf.close();
+        LittleFS.remove("/buf");
+        LittleFS.rename("/buf.tmp", "/buf");
     }
 }
