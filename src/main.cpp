@@ -15,6 +15,28 @@ AsyncWebServer server(80);
 Servo servoX, servoY;
 
 TaskHandle_t ledTaskHandle;
+TaskHandle_t heartbeatTaskHandle;
+
+void heartbeatTask(void*) {
+    const TickType_t period = pdMS_TO_TICKS(3600000); // 1 hour
+    for(;;) {
+        StaticJsonDocument<256> doc;
+        doc["uptime"] = esp_timer_get_time() / 1000000ULL;
+        doc["freeHeap"] = ESP.getFreeHeap();
+        if(WiFi.isConnected()) {
+            doc["rssi"] = WiFi.RSSI();
+            doc["ip"] = WiFi.localIP().toString();
+        }
+        String payload; serializeJson(doc, payload);
+        String topic = String("site/") + settings.siteName + "/heartbeat";
+        if(mqtt.connected()) {
+            mqtt.publish(topic.c_str(), payload.c_str(), settings.mqttQos, false);
+        } else {
+            bufferStore(topic, payload);
+        }
+        vTaskDelay(period);
+    }
+}
 
 void connectWiFi() {
     if(strlen(settings.wifiSSID) == 0) {
@@ -143,6 +165,7 @@ void setup() {
     loadSettings();
     ledInit(2);
     xTaskCreate(ledTask, "led", 1024, nullptr, 1, &ledTaskHandle);
+    xTaskCreate(heartbeatTask, "heartbeat", 4096, nullptr, 1, &heartbeatTaskHandle);
     connectWiFi();
     ntpBegin();
     connectMQTT();
