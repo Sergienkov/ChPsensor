@@ -12,7 +12,25 @@
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
 AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
 Servo servoX, servoY;
+
+TaskHandle_t sensorsTaskHandle;
+static int servoXAngle = 90;
+static int servoYAngle = 90;
+static volatile uint32_t lidarDueMs = 0;
+
+void wsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
+             AwsEventType type, void *arg, uint8_t *data, size_t len) {
+    if(type != WS_EVT_DATA) return;
+    String msg = String((char*)data).substring(0, len);
+    if(msg == "X+") { servoXAngle = min(180, servoXAngle + 1); servoX.write(servoXAngle); }
+    else if(msg == "X-") { servoXAngle = max(0, servoXAngle - 1); servoX.write(servoXAngle); }
+    else if(msg == "Y+") { servoYAngle = min(180, servoYAngle + 1); servoY.write(servoYAngle); }
+    else if(msg == "Y-") { servoYAngle = max(0, servoYAngle - 1); servoY.write(servoYAngle); }
+    else return;
+    lidarDueMs = millis() + 100;
+}
 
 TaskHandle_t ledTaskHandle;
 
@@ -119,6 +137,35 @@ void handlePasswordPost(AsyncWebServerRequest *request, uint8_t *data, size_t le
     request->send(200, "text/plain", "OK");
 }
 
+float readLidar() {
+    // Placeholder for real SF11c read
+    return 500.0f;
+}
+
+void sensorsTask(void*) {
+    const TickType_t delayStep = pdMS_TO_TICKS(100);
+    const uint32_t lidarPeriod = 600000; // 10 minutes
+    uint32_t lastLidar = 0;
+    uint8_t clogCnt = 0;
+    for(;;) {
+        uint32_t now = millis();
+        if((now - lastLidar >= lidarPeriod) || (lidarDueMs && now >= lidarDueMs)) {
+            float dist = readLidar();
+            lastLidar = now;
+            lidarDueMs = 0;
+            if(dist < settings.clogMin) {
+                if(++clogCnt >= settings.clogHold) {
+                    ledSetState(LedState::ALARM);
+                }
+            } else {
+                clogCnt = 0;
+                ledSetState(LedState::NORMAL);
+            }
+        }
+        vTaskDelay(delayStep);
+    }
+}
+
 void setupWeb() {
     server.on("/api/settings", HTTP_GET, [](AsyncWebServerRequest *req){
         StaticJsonDocument<512> doc = buildSettingsJson();
@@ -135,6 +182,8 @@ void setupWeb() {
         req->send(200, "application/json", out);
     });
     server.on("/update", HTTP_POST, [](AsyncWebServerRequest *req){ req->send(200, "text/plain", "OK"); ESP.restart(); });
+    ws.onEvent(wsEvent);
+    server.addHandler(&ws);
     server.begin();
 }
 
@@ -150,6 +199,9 @@ void setup() {
     setupWeb();
     servoX.attach(4);
     servoY.attach(5);
+    servoX.write(servoXAngle);
+    servoY.write(servoYAngle);
+    xTaskCreatePinnedToCore(sensorsTask, "sensors", 4096, nullptr, 1, &sensorsTaskHandle, 1);
 }
 
 void loop() {
