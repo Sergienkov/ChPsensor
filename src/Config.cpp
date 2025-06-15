@@ -25,6 +25,8 @@ void loadSettings() {
     settings.thr.eco2Max  = prefs.getFloat("eco2Max", settings.thr.eco2Max);
     settings.thr.tvocMin  = prefs.getFloat("tvocMin", settings.thr.tvocMin);
     settings.thr.tvocMax  = prefs.getFloat("tvocMax", settings.thr.tvocMax);
+    settings.thr.presMin  = prefs.getFloat("presMin", settings.thr.presMin);
+    settings.thr.presMax  = prefs.getFloat("presMax", settings.thr.presMax);
     settings.clogMin = prefs.getUShort("clogMin", settings.clogMin);
     settings.clogHold = prefs.getUChar("clogHold", settings.clogHold);
     prefs.end();
@@ -51,6 +53,8 @@ void saveSettings() {
     prefs.putFloat("eco2Max", settings.thr.eco2Max);
     prefs.putFloat("tvocMin", settings.thr.tvocMin);
     prefs.putFloat("tvocMax", settings.thr.tvocMax);
+    prefs.putFloat("presMin", settings.thr.presMin);
+    prefs.putFloat("presMax", settings.thr.presMax);
     prefs.putUShort("clogMin", settings.clogMin);
     prefs.putUChar("clogHold", settings.clogHold);
     prefs.end();

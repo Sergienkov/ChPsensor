@@ -15,6 +15,7 @@
 #include <MQUnifiedsensor.h>
 #include "SparkFun_ENS160.h"
 #include <Adafruit_AHTX0.h>
+#include "SDP810.h"
 
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
@@ -51,12 +52,14 @@ TaskHandle_t ledTaskHandle;
 MQUnifiedsensor mq2("ESP32", 3.3, 12, 34, "MQ-2");
 SparkFun_ENS160 ens160;
 Adafruit_AHTX0 aht21;
+SDP810 sdp810;
 
 SMAFilter<float, 5> mq2Filter;
 SMAFilter<float, 5> eco2Filter;
 SMAFilter<float, 5> tvocFilter;
 SMAFilter<float, 5> tempFilter;
 SMAFilter<float, 5> rhFilter;
+SMAFilter<float, 5> presFilter;
 
 float lastMq2 = 0;
 float lastEco2 = 0;
@@ -64,6 +67,7 @@ float lastTvoc = 0;
 float lastTemp = 0;
 float lastRh = 0;
 float lastLidar = 0;
+float lastPressure = 0;
 unsigned long lastHeartbeat = 0;
 
 String hashPassword(const char *pwd) {
@@ -143,6 +147,10 @@ float readRh() {
     return h.relative_humidity;
 }
 
+float readPressure() {
+    return sdp810.readPressure();
+}
+
 void publishEvent(const char* name, float value) {
     char topic[64];
     snprintf(topic, sizeof(topic), "site/%s/event/%s", settings.siteName, name);
@@ -158,6 +166,7 @@ void publishHeartbeat() {
     StaticJsonDocument<256> doc;
     doc["smoke"] = lastMq2;
     doc["lidar"] = lastLidar;
+    doc["pressure"] = lastPressure;
     doc["eco2"] = lastEco2;
     doc["tvoc"] = lastTvoc;
     doc["temp"] = lastTemp;
@@ -174,12 +183,14 @@ void checkSensors() {
     tvocFilter.add(readTvoc());
     tempFilter.add(readTemp());
     rhFilter.add(readRh());
+    presFilter.add(readPressure());
 
     lastMq2 = mq2Filter.average();
     lastEco2 = eco2Filter.average();
     lastTvoc = tvocFilter.average();
     lastTemp = tempFilter.average();
     lastRh = rhFilter.average();
+    lastPressure = presFilter.average();
 
     if(lastMq2 < settings.thr.smokeMin || lastMq2 > settings.thr.smokeMax)
         publishEvent("smoke", lastMq2);
@@ -187,6 +198,8 @@ void checkSensors() {
         publishEvent("eco2", lastEco2);
     if(lastTvoc < settings.thr.tvocMin || lastTvoc > settings.thr.tvocMax)
         publishEvent("tvoc", lastTvoc);
+    if(lastPressure < settings.thr.presMin || lastPressure > settings.thr.presMax)
+        publishEvent("pressure", lastPressure);
 }
 
 StaticJsonDocument<512> buildSettingsJson() {
@@ -210,6 +223,8 @@ StaticJsonDocument<512> buildSettingsJson() {
     e["min"] = settings.thr.eco2Min; e["max"] = settings.thr.eco2Max;
     auto t = thr.createNestedObject("tvoc");
     t["min"] = settings.thr.tvocMin; t["max"] = settings.thr.tvocMax;
+    auto p = thr.createNestedObject("pressure");
+    p["min"] = settings.thr.presMin; p["max"] = settings.thr.presMax;
     auto clog = doc.createNestedObject("clog");
     clog["clogMin"] = settings.clogMin;
     clog["clogHold"] = settings.clogHold;
@@ -242,6 +257,7 @@ void handleSettingsPost(AsyncWebServerRequest *request, uint8_t *data, size_t le
         JsonObject s = thr["smoke"]; if(!s.isNull()) { settings.thr.smokeMin = s["min"] | settings.thr.smokeMin; settings.thr.smokeMax = s["max"] | settings.thr.smokeMax; }
         JsonObject e = thr["eco2"]; if(!e.isNull()) { settings.thr.eco2Min = e["min"] | settings.thr.eco2Min; settings.thr.eco2Max = e["max"] | settings.thr.eco2Max; }
         JsonObject t = thr["tvoc"]; if(!t.isNull()) { settings.thr.tvocMin = t["min"] | settings.thr.tvocMin; settings.thr.tvocMax = t["max"] | settings.thr.tvocMax; }
+        JsonObject p = thr["pressure"]; if(!p.isNull()) { settings.thr.presMin = p["min"] | settings.thr.presMin; settings.thr.presMax = p["max"] | settings.thr.presMax; }
     }
     JsonObject clog = doc["clog"]; if(!clog.isNull()) { settings.clogMin = clog["clogMin"] | settings.clogMin; settings.clogHold = clog["clogHold"] | settings.clogHold; }
     settings.debugEnable = doc["debugEnable"] | settings.debugEnable;
@@ -283,6 +299,7 @@ void sensorsTask(void*) {
     mq2.calibrate(9.83);
     ens160.begin();
     aht21.begin();
+    sdp810.begin();
     uint32_t lastLidarTs = 0;
     uint8_t clogCnt = 0;
     uint32_t lastSensors = 0;
@@ -331,6 +348,7 @@ void setupWeb() {
         doc["smoke"] = lastMq2;
         doc["eco2"] = lastEco2;
         doc["tvoc"] = lastTvoc;
+        doc["pressure"] = lastPressure;
         doc["temp"] = lastTemp;
         doc["rh"] = lastRh;
         doc["x"] = servoXAngle;
