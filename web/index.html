@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChPsensor Service UI</title>
+<link rel="stylesheet" href="style.css">
+<script src="script.js" defer></script>
+</head>
+<body>
+<header>
+<h1>ChPsensor Service UI</h1>
+</header>
+<main>
+<section id="live-panel">
+<h2>Live-панель</h2>
+<table id="live-table">
+<thead>
+<tr>
+<th>Lidar</th>
+<th>Smoke</th>
+<th>eCO₂</th>
+<th>TVOC</th>
+<th>t°</th>
+<th>RH</th>
+<th>X°</th>
+<th>Y°</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td colspan="8" style="text-align:center;">—</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="settings">
+<h2>Настройки</h2>
+<form id="settings-form">
+<details open>
+<summary>Wi-Fi</summary>
+<label>SSID <input type="text" id="wifi-ssid" name="wifiSsid"></label>
+<label>Пароль <input type="password" id="wifi-pass" name="wifiPass"></label>
+</details>
+<details>
+<summary>MQTT</summary>
+<label>Host <input type="text" id="mqtt-host" name="mqttHost"></label>
+<label>Port <input type="number" id="mqtt-port" name="mqttPort" value="1883"></label>
+<label>User <input type="text" id="mqtt-user" name="mqttUser"></label>
+<label>Pass <input type="password" id="mqtt-pass" name="mqttPass"></label>
+<label>QoS <select id="mqtt-qos" name="mqttQos"><option value="0">0</option><option value="1">1</option><option value="2">2</option></select></label>
+</details>
+<details>
+<summary>Пороги</summary>
+<div class="threshold-group">
+<h4>Lidar (мм)</h4>
+<label>min <input type="number" id="lidar-min" name="lidarMin"></label>
+<label>max <input type="number" id="lidar-max" name="lidarMax"></label>
+</div>
+<div class="threshold-group">
+<h4>Smoke (ppm)</h4>
+<label>min <input type="number" id="smoke-min" name="smokeMin"></label>
+<label>max <input type="number" id="smoke-max" name="smokeMax"></label>
+</div>
+<div class="threshold-group">
+<h4>eCO₂ (ppm)</h4>
+<label>min <input type="number" id="eco2-min" name="eco2Min"></label>
+<label>max <input type="number" id="eco2-max" name="eco2Max"></label>
+</div>
+<div class="threshold-group">
+<h4>TVOC (ppb)</h4>
+<label>min <input type="number" id="tvoc-min" name="tvocMin"></label>
+<label>max <input type="number" id="tvoc-max" name="tvocMax"></label>
+</div>
+</details>
+<details>
+<summary>Clog</summary>
+<label>ClogMin (мм) <input type="number" id="clog-min" name="clogMin"></label>
+<label>ClogHold (циклы) <input type="number" id="clog-hold" name="clogHold"></label>
+</details>
+<details>
+<summary>Debug</summary>
+<label><input type="checkbox" id="debug-enable" name="debugEnable"> Отправлять debug-сообщения</label>
+</details>
+<details>
+<summary>Учётная запись UI</summary>
+<label>User <input type="text" id="ui-user" name="uiUser"></label>
+</details>
+<button type="submit">Сохранить</button>
+</form>
+<form id="password-form">
+<h3>Сменить пароль UI</h3>
+<label>Новый пароль <input type="password" id="new-password" required></label>
+<button type="submit">Изменить пароль</button>
+</form>
+</section>
+<section id="ota">
+<h2>OTA</h2>
+<button id="ota-button">Обновить прошивку</button>
+<div id="ota-modal" class="modal">
+<form id="ota-form" enctype="multipart/form-data" action="/update" method="POST">
+<h3>OTA Update</h3>
+<input type="file" name="firmware" accept=".bin" required>
+<div class="modal-actions">
+<button type="submit">Загрузить</button>
+<button type="button" id="ota-cancel">Отмена</button>
+</div>
+</form>
+</div>
+</section>
+</main>
+</body>
+</html>
