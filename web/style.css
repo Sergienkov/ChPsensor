@@ -65,3 +65,17 @@ button {
 .modal.show {
     display: flex;
 }
+
+#servo-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 1rem;
+}
+#servo-controls > div {
+    display: flex;
+    gap: 0.5rem;
+}
+#servo-controls button {
+    margin: 0.25rem;
+}
