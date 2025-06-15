@@ -11,6 +11,8 @@ struct Thresholds {
     float eco2Max   = 2000;
     float tvocMin   = 0;
     float tvocMax   = 600;
+    float presMin   = -500;
+    float presMax   = 500;
 };
 
 struct Settings {
