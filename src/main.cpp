@@ -29,6 +29,8 @@ TaskHandle_t servoTaskHandle;
 
 static volatile int servoXAngle = 90;
 static volatile int servoYAngle = 90;
+// Timestamp when the next lidar reading should occur.  Set by the
+// servo task whenever the head is moved.
 static volatile uint32_t lidarDueMs = 0;
 
 struct ServoCmd {
@@ -37,6 +39,8 @@ struct ServoCmd {
     int y;
 };
 
+// Queue used to pass servo movement commands from the web interface
+// to the dedicated servo task.
 static QueueHandle_t servoQueue;
 
 void setServoAngles(int x, int y) {
@@ -101,6 +105,9 @@ String hashPassword(const char *pwd) {
     return String(hex);
 }
 
+// Connect to Wi-Fi using credentials from Settings.  When no
+// credentials are configured the board starts in AP mode so that
+// the user can provide them via the web interface.
 void connectWiFi() {
     if(strlen(settings.wifiSSID) == 0) {
         WiFi.softAP("start", "starttrats");
@@ -126,6 +133,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     // handle incoming messages
 }
 
+// Establish connection to the MQTT broker defined in Settings and
+// publish the online status.  A Last Will message is registered so
+// that clients are notified when the device goes offline.
 void connectMQTT() {
     mqtt.setServer(settings.mqttHost, settings.mqttPort);
     mqtt.setCallback(mqttCallback);
@@ -343,7 +353,9 @@ float readLidar() {
     return resp.toFloat();
 }
 
-// Задача управления сервоприводами и запуском измерения лидара
+// Task controlling the two servos that aim the lidar sensor. After
+// moving to the requested position a measurement is triggered via
+// ``lidarDueMs``.
 void servoTask(void*) {
     servoX.attach(4);
     servoY.attach(5);
@@ -370,9 +382,13 @@ void servoTask(void*) {
     }
 }
 
+// Background task that periodically samples all sensors and triggers
+// lidar measurements.  Gas and pressure sensors are checked once a
+// minute while the lidar runs every ten minutes or when requested by
+// the servo task.
 void sensorsTask(void*) {
-    const TickType_t delayStep = pdMS_TO_TICKS(100);
-    const uint32_t lidarPeriod = 600000; // 10 minutes
+    const TickType_t delayStep = pdMS_TO_TICKS(100);    // task loop period
+    const uint32_t lidarPeriod = 600000;                // 10 min between lidar scans
     Wire.begin(8, 3);
     Serial1.begin(115200, SERIAL_8N1, 9, 10);
     mq2.init();
@@ -383,12 +399,12 @@ void sensorsTask(void*) {
     ens160.begin();
     aht21.begin();
     sdp810.begin();
-    uint32_t lastLidarTs = 0;
-    uint8_t clogCnt = 0;
-    uint32_t lastSensors = 0;
+    uint32_t lastLidarTs = 0;          // last time the lidar was triggered
+    uint8_t clogCnt = 0;               // consecutive readings below clogMin
+    uint32_t lastSensors = 0;          // last time environmental sensors were read
     for(;;) {
         uint32_t now = millis();
-        if(now - lastSensors >= 60000) {
+        if(now - lastSensors >= 60000) {       // update environmental sensors once a minute
             checkSensors();
             lastSensors = now;
         }
@@ -508,9 +524,9 @@ void setup() {
     loadSettings();
     ledInit(2);
     xTaskCreate(ledTask, "led", 1024, nullptr, 1, &ledTaskHandle);
-    connectWiFi();
-    ntpBegin();
-    connectMQTT();
+    connectWiFi();                       // establish network connection
+    ntpBegin();                          // start periodic NTP time sync
+    connectMQTT();                       // connect to broker and publish status
     bufferInit();
     setupWeb();
     servoQueue = xQueueCreate(4, sizeof(ServoCmd));
@@ -520,8 +536,8 @@ void setup() {
 
 void loop() {
     static bool wasConnected = false;
-    mqtt.loop();
-    ntpLoop();
+    mqtt.loop();                       // maintain MQTT connection
+    ntpLoop();                         // refresh NTP time if needed
     if(!mqtt.connected()) {
         connectMQTT();
     }
@@ -532,6 +548,7 @@ void loop() {
     wasConnected = connected;
 
     unsigned long now = millis();
+    // Send a summary of sensor readings every hour (3600000 ms)
     if(now - lastHeartbeat >= 3600000) {
         publishHeartbeat();
         lastHeartbeat = now;
