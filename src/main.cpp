@@ -486,9 +486,17 @@ void setup() {
 }
 
 void loop() {
+    static bool wasConnected = false;
     mqtt.loop();
     ntpLoop();
-    if(mqtt.connected()) bufferFlush();
+    if(!mqtt.connected()) {
+        connectMQTT();
+    }
+    bool connected = mqtt.connected();
+    if(connected && !wasConnected) {
+        bufferFlush();
+    }
+    wasConnected = connected;
 
     unsigned long now = millis();
     if(now - lastHeartbeat >= 3600000) {
