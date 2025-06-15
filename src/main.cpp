@@ -3,6 +3,8 @@
 #include <PubSubClient.h>
 #include <ESPAsyncWebServer.h>
 #include <ESP32Servo.h>
+#include <Wire.h>
+#include <SensirionI2CSdp.h>
 #include "Config.h"
 #include "LedFSM.h"
 #include "NtpSync.h"
@@ -13,8 +15,11 @@ WiFiClient espClient;
 PubSubClient mqtt(espClient);
 AsyncWebServer server(80);
 Servo servoX, servoY;
+SensirionI2CSdp sdp;
+float dpValue = 0.0f;
 
 TaskHandle_t ledTaskHandle;
+unsigned long lastDpRead = 0;
 
 void connectWiFi() {
     if(strlen(settings.wifiSSID) == 0) {
@@ -119,6 +124,18 @@ void handlePasswordPost(AsyncWebServerRequest *request, uint8_t *data, size_t le
     request->send(200, "text/plain", "OK");
 }
 
+void publishHeartbeat() {
+    StaticJsonDocument<256> doc;
+    doc["dp"] = dpValue;
+    doc["uptime"] = millis() / 1000;
+    doc["heap"] = ESP.getFreeHeap();
+    String out; serializeJson(doc, out);
+    String topic = String("site/") + settings.siteName + "/heartbeat";
+    if(!mqtt.publish(topic.c_str(), out.c_str(), settings.mqttQos, false)) {
+        bufferStore(topic, out);
+    }
+}
+
 void setupWeb() {
     server.on("/api/settings", HTTP_GET, [](AsyncWebServerRequest *req){
         StaticJsonDocument<512> doc = buildSettingsJson();
@@ -130,7 +147,8 @@ void setupWeb() {
     server.on("/api/live", HTTP_GET, [](AsyncWebServerRequest *req){
         StaticJsonDocument<256> doc;
         doc["lidar"] = 0; doc["smoke"] = 0; doc["eco2"] = 0; doc["tvoc"] = 0;
-        doc["temp"] = 0; doc["rh"] = 0; doc["x"] = 0; doc["y"] = 0;
+        doc["temp"] = 0; doc["rh"] = 0; doc["dp"] = dpValue;
+        doc["x"] = 0; doc["y"] = 0;
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
@@ -147,6 +165,9 @@ void setup() {
     ntpBegin();
     connectMQTT();
     bufferInit();
+    Wire.begin(8, 3);
+    sdp.begin(Wire, SDP8XX_I2C_ADDRESS_0);
+    sdp.startContinuousMeasurementWithDiffPressureTComp();
     setupWeb();
     servoX.attach(4);
     servoY.attach(5);
@@ -155,5 +176,19 @@ void setup() {
 void loop() {
     mqtt.loop();
     if(mqtt.connected()) bufferFlush();
+    unsigned long now = millis();
+    if(now - lastDpRead > 60000) {
+        float t; // temperature not used
+        float val;
+        if(sdp.readMeasurement(val, t) == 0) {
+            dpValue = val;
+        }
+        lastDpRead = now;
+    }
+    static unsigned long lastHeartbeat = 0;
+    if(now - lastHeartbeat > 3600000) {
+        publishHeartbeat();
+        lastHeartbeat = now;
+    }
     delay(10);
 }
