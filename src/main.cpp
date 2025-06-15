@@ -10,6 +10,7 @@
 #include "LedFSM.h"
 #include "NtpSync.h"
 #include "MsgBuffer.h"
+#include "Debug.h"
 #include "Filter.h"
 #include <ArduinoJson.h>
 #include <MQUnifiedsensor.h>
@@ -34,6 +35,9 @@ void setServoAngles(int x, int y) {
     servoX.write(servoXAngle);
     servoY.write(servoYAngle);
     lidarDueMs = millis() + 100;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "servo %d %d", servoXAngle, servoYAngle);
+    debugPublish(buf);
 }
 
 void wsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
@@ -88,6 +92,7 @@ void connectWiFi() {
     if(strlen(settings.wifiSSID) == 0) {
         WiFi.softAP("start", "starttrats");
         ledSetState(LedState::ERROR);
+        debugPublish("WiFi AP mode");
         return;
     }
     WiFi.mode(WIFI_STA);
@@ -98,6 +103,9 @@ void connectWiFi() {
     }
     if(WiFi.status() != WL_CONNECTED) {
         ledSetState(LedState::ERROR);
+        debugPublish("WiFi connect fail");
+    } else {
+        debugPublish("WiFi connected");
     }
 }
 
@@ -111,8 +119,10 @@ void connectMQTT() {
     String clientId = String("client-") + String((uint32_t)ESP.getEfuseMac(), HEX);
     if(!mqtt.connect(clientId.c_str(), settings.mqttUser, settings.mqttPass)) {
         ledSetState(LedState::ERROR);
+        debugPublish("MQTT connect fail");
     } else {
         ledSetState(LedState::NORMAL);
+        debugPublish("MQTT connected");
     }
 }
 
@@ -158,6 +168,9 @@ void publishEvent(const char* name, float value) {
     snprintf(payload, sizeof(payload), "%.2f", value);
     if(mqtt.connected()) mqtt.publish(topic, payload, settings.mqttQos, false);
     else bufferStore(topic, payload);
+    char dbg[64];
+    snprintf(dbg, sizeof(dbg), "event %s %.2f", name, value);
+    debugPublish(dbg);
 }
 
 void publishHeartbeat() {
@@ -175,6 +188,7 @@ void publishHeartbeat() {
     String out; serializeJson(doc, out);
     if(mqtt.connected()) mqtt.publish(topic, out.c_str(), settings.mqttQos, false);
     else bufferStore(topic, out);
+    debugPublish("heartbeat");
 }
 
 void checkSensors() {
