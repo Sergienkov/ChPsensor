@@ -154,6 +154,7 @@ void setup() {
 
 void loop() {
     mqtt.loop();
+    ntpLoop();
     if(mqtt.connected()) bufferFlush();
     delay(10);
 }
