@@ -9,6 +9,7 @@
 #include "LedFSM.h"
 #include "NtpSync.h"
 #include "MsgBuffer.h"
+#include "Filter.h"
 #include <ArduinoJson.h>
 
 WiFiClient espClient;
@@ -35,6 +36,10 @@ void wsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
 }
 
 TaskHandle_t ledTaskHandle;
+// Filter objects ...
+
+unsigned long lastF2 = 0;
+unsigned long lastHeartbeat = 0;
 
 String hashPassword(const char *pwd) {
     unsigned char hash[32];
@@ -45,7 +50,7 @@ String hashPassword(const char *pwd) {
     mbedtls_sha256_finish_ret(&ctx, hash);
     mbedtls_sha256_free(&ctx);
     char hex[65];
-    for(int i=0;i<32;i++) sprintf(hex + i*2, "%02x", hash[i]);
+    for (int i = 0; i < 32; ++i) sprintf(hex + i*2, "%02x", hash[i]);
     hex[64] = 0;
     return String(hex);
 }
@@ -80,6 +85,62 @@ void connectMQTT() {
     } else {
         ledSetState(LedState::NORMAL);
     }
+}
+
+// -------- Sensor stubs and publishing helpers --------
+
+float readMQ2() {
+    return analogRead(34);
+}
+
+float readEco2() { return random(400, 2000); }
+float readTvoc() { return random(0, 600); }
+float readTemp() { return random(200, 300) / 10.0f; }
+float readRh() { return random(300, 700) / 10.0f; }
+
+void publishEvent(const char* name, float value) {
+    char topic[64];
+    snprintf(topic, sizeof(topic), "site/%s/event/%s", settings.siteName, name);
+    char payload[32];
+    snprintf(payload, sizeof(payload), "%.2f", value);
+    if(mqtt.connected()) mqtt.publish(topic, payload, settings.mqttQos, false);
+    else bufferStore(topic, payload);
+}
+
+void publishHeartbeat() {
+    char topic[64];
+    snprintf(topic, sizeof(topic), "site/%s/heartbeat", settings.siteName);
+    StaticJsonDocument<256> doc;
+    doc["smoke"] = lastMq2;
+    doc["eco2"] = lastEco2;
+    doc["tvoc"] = lastTvoc;
+    doc["temp"] = lastTemp;
+    doc["rh"] = lastRh;
+    doc["heap"] = ESP.getFreeHeap();
+    String out; serializeJson(doc, out);
+    if(mqtt.connected()) mqtt.publish(topic, out.c_str(), settings.mqttQos, false);
+    else bufferStore(topic, out);
+}
+
+void checkSensors() {
+    mq2Filter.add(readMQ2());
+    eco2Filter.add(readEco2());
+    tvocFilter.add(readTvoc());
+    tempFilter.add(readTemp());
+    rhFilter.add(readRh());
+
+    lastMq2 = mq2Filter.average();
+    lastEco2 = eco2Filter.average();
+    lastTvoc = tvocFilter.average();
+    lastTemp = tempFilter.average();
+    lastRh = rhFilter.average();
+
+    if(lastMq2 < settings.thr.smokeMin || lastMq2 > settings.thr.smokeMax)
+        publishEvent("smoke", lastMq2);
+    if(lastEco2 < settings.thr.eco2Min || lastEco2 > settings.thr.eco2Max)
+        publishEvent("eco2", lastEco2);
+    if(lastTvoc < settings.thr.tvocMin || lastTvoc > settings.thr.tvocMax)
+        publishEvent("tvoc", lastTvoc);
 }
 
 StaticJsonDocument<512> buildSettingsJson() {
@@ -200,8 +261,13 @@ void setupWeb() {
     }, NULL, handlePasswordPost);
     server.on("/api/live", HTTP_GET, [](AsyncWebServerRequest *req){
         StaticJsonDocument<256> doc;
-        doc["lidar"] = 0; doc["smoke"] = 0; doc["eco2"] = 0; doc["tvoc"] = 0;
-        doc["temp"] = 0; doc["rh"] = 0; doc["x"] = 0; doc["y"] = 0;
+        doc["lidar"] = 0; // lidar not implemented
+        doc["smoke"] = lastMq2;
+        doc["eco2"] = lastEco2;
+        doc["tvoc"] = lastTvoc;
+        doc["temp"] = lastTemp;
+        doc["rh"] = lastRh;
+        doc["x"] = 0; doc["y"] = 0;
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
@@ -251,5 +317,15 @@ void setup() {
 void loop() {
     mqtt.loop();
     if(mqtt.connected()) bufferFlush();
+
+    unsigned long now = millis();
+    if(now - lastF2 >= 60000) {
+        checkSensors();
+        lastF2 = now;
+    }
+    if(now - lastHeartbeat >= 3600000) {
+        publishHeartbeat();
+        lastHeartbeat = now;
+    }
     delay(10);
 }
