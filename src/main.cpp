@@ -23,16 +23,23 @@ static int servoXAngle = 90;
 static int servoYAngle = 90;
 static volatile uint32_t lidarDueMs = 0;
 
+void setServoAngles(int x, int y) {
+    servoXAngle = constrain(x, 0, 180);
+    servoYAngle = constrain(y, 0, 180);
+    servoX.write(servoXAngle);
+    servoY.write(servoYAngle);
+    lidarDueMs = millis() + 100;
+}
+
 void wsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
              AwsEventType type, void *arg, uint8_t *data, size_t len) {
     if(type != WS_EVT_DATA) return;
     String msg = String((char*)data).substring(0, len);
-    if(msg == "X+") { servoXAngle = min(180, servoXAngle + 1); servoX.write(servoXAngle); }
-    else if(msg == "X-") { servoXAngle = max(0, servoXAngle - 1); servoX.write(servoXAngle); }
-    else if(msg == "Y+") { servoYAngle = min(180, servoYAngle + 1); servoY.write(servoYAngle); }
-    else if(msg == "Y-") { servoYAngle = max(0, servoYAngle - 1); servoY.write(servoYAngle); }
+    if(msg == "X+") setServoAngles(servoXAngle + 1, servoYAngle);
+    else if(msg == "X-") setServoAngles(servoXAngle - 1, servoYAngle);
+    else if(msg == "Y+") setServoAngles(servoXAngle, servoYAngle + 1);
+    else if(msg == "Y-") setServoAngles(servoXAngle, servoYAngle - 1);
     else return;
-    lidarDueMs = millis() + 100;
 }
 
 TaskHandle_t ledTaskHandle;
@@ -267,9 +274,25 @@ void setupWeb() {
         doc["tvoc"] = lastTvoc;
         doc["temp"] = lastTemp;
         doc["rh"] = lastRh;
-        doc["x"] = 0; doc["y"] = 0;
+        doc["x"] = servoXAngle;
+        doc["y"] = servoYAngle;
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
+    });
+
+    server.on("/api/servo", HTTP_POST, [](AsyncWebServerRequest *request){
+        if(!request->authenticate(settings.uiUser, settings.uiPass))
+            return request->requestAuthentication();
+    }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t, size_t){
+        StaticJsonDocument<128> doc;
+        if(deserializeJson(doc, data, len)) {
+            request->send(400, "text/plain", "Bad JSON");
+            return;
+        }
+        int x = doc["x"] | servoXAngle;
+        int y = doc["y"] | servoYAngle;
+        setServoAngles(x, y);
+        request->send(200, "text/plain", "OK");
     });
     server.on("/update", HTTP_POST,
         [](AsyncWebServerRequest *request){
