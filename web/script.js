@@ -1,5 +1,18 @@
 (function() {
     const liveTable = document.querySelector('#live-table tbody');
+    const lastUpdate = document.getElementById('last-update');
+    const themeToggle = document.getElementById('theme-toggle');
+
+    let theme = localStorage.getItem('theme');
+    if(!theme) {
+        theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    document.body.classList.toggle('dark', theme === 'dark');
+    themeToggle.addEventListener('click', () => {
+        theme = theme === 'dark' ? 'light' : 'dark';
+        document.body.classList.toggle('dark', theme === 'dark');
+        localStorage.setItem('theme', theme);
+    });
 
     function updateLive(data) {
         const row = document.createElement('tr');
@@ -15,6 +28,7 @@
         ].map(v => `<td>${v}</td>`).join('');
         liveTable.innerHTML = '';
         liveTable.appendChild(row);
+        if(lastUpdate) lastUpdate.textContent = new Date().toLocaleTimeString();
     }
 
     function fetchLive() {
