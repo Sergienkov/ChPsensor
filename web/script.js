@@ -24,6 +24,52 @@
     setInterval(fetchLive, 5000);
     fetchLive();
 
+    function loadSettings() {
+        fetch('/api/settings')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('site-name').value = data.siteName || '';
+                const wifi = data.wifi || {};
+                document.getElementById('wifi-ssid').value = wifi.ssid || '';
+                document.getElementById('wifi-pass').value = wifi.password || '';
+                const mqtt = data.mqtt || {};
+                document.getElementById('mqtt-host').value = mqtt.host || '';
+                document.getElementById('mqtt-port').value = mqtt.port || '';
+                document.getElementById('mqtt-user').value = mqtt.user || '';
+                document.getElementById('mqtt-pass').value = mqtt.pass || '';
+                document.getElementById('mqtt-qos').value = mqtt.qos || 0;
+                const thr = data.thresholds || {};
+                if (thr.lidar) {
+                    document.getElementById('lidar-min').value = thr.lidar.min;
+                    document.getElementById('lidar-max').value = thr.lidar.max;
+                }
+                if (thr.smoke) {
+                    document.getElementById('smoke-min').value = thr.smoke.min;
+                    document.getElementById('smoke-max').value = thr.smoke.max;
+                }
+                if (thr.eco2) {
+                    document.getElementById('eco2-min').value = thr.eco2.min;
+                    document.getElementById('eco2-max').value = thr.eco2.max;
+                }
+                if (thr.tvoc) {
+                    document.getElementById('tvoc-min').value = thr.tvoc.min;
+                    document.getElementById('tvoc-max').value = thr.tvoc.max;
+                }
+                if (thr.pressure) {
+                    document.getElementById('pressure-min').value = thr.pressure.min;
+                    document.getElementById('pressure-max').value = thr.pressure.max;
+                }
+                const clog = data.clog || {};
+                document.getElementById('clog-min').value = clog.clogMin || '';
+                document.getElementById('clog-hold').value = clog.clogHold || '';
+                document.getElementById('debug-enable').checked = !!data.debugEnable;
+                document.getElementById('ui-user').value = data.uiUser || '';
+            })
+            .catch(() => {});
+    }
+
+    loadSettings();
+
     // Settings submit
     const settingsForm = document.getElementById('settings-form');
     settingsForm.addEventListener('submit', ev => {
@@ -57,6 +103,10 @@
                 tvoc: {
                     min: Number(document.getElementById('tvoc-min').value),
                     max: Number(document.getElementById('tvoc-max').value)
+                },
+                pressure: {
+                    min: Number(document.getElementById('pressure-min').value),
+                    max: Number(document.getElementById('pressure-max').value)
                 }
             },
             clog: {
